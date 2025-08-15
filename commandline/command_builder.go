@@ -1,6 +1,7 @@
 package commandline
 
 import (
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,12 +17,12 @@ import (
 	"github.com/UiPath/uipathcli/log"
 	"github.com/UiPath/uipathcli/output"
 	"github.com/UiPath/uipathcli/parser"
-	"github.com/UiPath/uipathcli/utils"
+	"github.com/UiPath/uipathcli/utils/stream"
 )
 
 // The CommandBuilder is creating all available operations and arguments for the CLI.
 type CommandBuilder struct {
-	Input              utils.Stream
+	Input              stream.Stream
 	StdIn              io.Reader
 	StdOut             io.Writer
 	StdErr             io.Writer
@@ -37,7 +38,7 @@ func (b CommandBuilder) sort(commands []*CommandDefinition) {
 	})
 }
 
-func (b CommandBuilder) fileInput(context *CommandExecContext, parameters []parser.Parameter) utils.Stream {
+func (b CommandBuilder) fileInput(context *CommandExecContext, parameters []parser.Parameter) stream.Stream {
 	value := context.String(FlagNameFile)
 	if value == "" {
 		return nil
@@ -50,51 +51,47 @@ func (b CommandBuilder) fileInput(context *CommandExecContext, parameters []pars
 			return nil
 		}
 	}
-	return utils.NewFileStream(value)
+	return stream.NewFileStream(value)
+}
+
+func (b CommandBuilder) createExecutionParameter(context *CommandExecContext, config *config.Config, param parser.Parameter) (*executor.ExecutionParameter, error) {
+	typeConverter := newTypeConverter()
+	if context.IsSet(param.Name) && param.IsArray() {
+		value, err := typeConverter.ConvertArray(context.StringSlice(param.Name), param)
+		if err != nil {
+			return nil, err
+		}
+		return executor.NewExecutionParameter(param.FieldName, value, param.In), nil
+	} else if context.IsSet(param.Name) {
+		value, err := typeConverter.Convert(context.String(param.Name), param)
+		if err != nil {
+			return nil, err
+		}
+		return executor.NewExecutionParameter(param.FieldName, value, param.In), nil
+	} else if configValue, ok := config.Parameter[param.Name]; ok {
+		value, err := typeConverter.Convert(configValue, param)
+		if err != nil {
+			return nil, err
+		}
+		return executor.NewExecutionParameter(param.FieldName, value, param.In), nil
+	} else if param.Required && param.DefaultValue != nil {
+		return executor.NewExecutionParameter(param.FieldName, param.DefaultValue, param.In), nil
+	}
+	return nil, nil
 }
 
 func (b CommandBuilder) createExecutionParameters(context *CommandExecContext, config *config.Config, operation parser.Operation) (executor.ExecutionParameters, error) {
-	typeConverter := newTypeConverter()
-
 	parameters := []executor.ExecutionParameter{}
 	for _, param := range operation.Parameters {
-		if context.IsSet(param.Name) && param.IsArray() {
-			value, err := typeConverter.ConvertArray(context.StringSlice(param.Name), param)
-			if err != nil {
-				return nil, err
-			}
-			parameter := executor.NewExecutionParameter(param.FieldName, value, param.In)
-			parameters = append(parameters, *parameter)
-		} else if context.IsSet(param.Name) {
-			value, err := typeConverter.Convert(context.String(param.Name), param)
-			if err != nil {
-				return nil, err
-			}
-			parameter := executor.NewExecutionParameter(param.FieldName, value, param.In)
-			parameters = append(parameters, *parameter)
-		} else if configValue, ok := config.Parameter[param.Name]; ok {
-			value, err := typeConverter.Convert(configValue, param)
-			if err != nil {
-				return nil, err
-			}
-			parameter := executor.NewExecutionParameter(param.FieldName, value, param.In)
-			parameters = append(parameters, *parameter)
-		} else if param.Required && param.DefaultValue != nil {
-			parameter := executor.NewExecutionParameter(param.FieldName, param.DefaultValue, param.In)
+		parameter, err := b.createExecutionParameter(context, config, param)
+		if err != nil {
+			return nil, err
+		}
+		if parameter != nil {
 			parameters = append(parameters, *parameter)
 		}
 	}
-	parameters = append(parameters, b.createExecutionParametersFromConfigMap(config.Header, parser.ParameterInHeader)...)
 	return parameters, nil
-}
-
-func (b CommandBuilder) createExecutionParametersFromConfigMap(params map[string]string, in string) executor.ExecutionParameters {
-	parameters := []executor.ExecutionParameter{}
-	for key, value := range params {
-		parameter := executor.NewExecutionParameter(key, value, in)
-		parameters = append(parameters, *parameter)
-	}
-	return parameters
 }
 
 func (b CommandBuilder) formatAllowedValues(values []interface{}) string {
@@ -115,7 +112,8 @@ func (b CommandBuilder) createFlags(parameters []parser.Parameter) []*FlagDefini
 		if parameter.IsArray() {
 			flagType = FlagTypeStringArray
 		}
-		flag := NewFlag(parameter.Name, formatter.Description(), flagType)
+		flag := NewFlag(parameter.Name, formatter.Description(), flagType).
+			WithHidden(parameter.Hidden)
 		flags = append(flags, flag)
 	}
 	return flags
@@ -169,9 +167,8 @@ func (b CommandBuilder) createIdentityUri(context *CommandExecContext, config co
 		return identityUri, nil
 	}
 
-	value := config.Auth.Config["uri"]
-	uri, valid := value.(string)
-	if valid && uri != "" {
+	uri = config.AuthUri()
+	if uri != "" {
 		identityUri, err := url.Parse(uri)
 		if err != nil {
 			return nil, fmt.Errorf("Error parsing identity uri config: %w", err)
@@ -206,12 +203,8 @@ func (b CommandBuilder) getValue(parameter parser.Parameter, context *CommandExe
 	if value != "" {
 		return value
 	}
-	value = config.Header[parameter.Name]
-	if value != "" {
-		return value
-	}
 	if parameter.DefaultValue != nil {
-		return fmt.Sprintf("%v", parameter.DefaultValue)
+		return fmt.Sprint(parameter.DefaultValue)
 	}
 	return ""
 }
@@ -228,7 +221,7 @@ func (b CommandBuilder) validateArguments(context *CommandExecContext, parameter
 		if value != "" && len(parameter.AllowedValues) > 0 {
 			valid := false
 			for _, allowedValue := range parameter.AllowedValues {
-				if fmt.Sprintf("%v", allowedValue) == value {
+				if fmt.Sprint(allowedValue) == value {
 					valid = true
 					break
 				}
@@ -246,8 +239,8 @@ func (b CommandBuilder) validateArguments(context *CommandExecContext, parameter
 	return err
 }
 
-func (b CommandBuilder) logger(context executor.ExecutionContext, writer io.Writer) log.Logger {
-	if context.Debug {
+func (b CommandBuilder) logger(debug bool, writer io.Writer) log.Logger {
+	if debug {
 		return log.NewDebugLogger(writer)
 	}
 	return log.NewDefaultLogger(writer)
@@ -264,11 +257,17 @@ func (b CommandBuilder) outputWriter(writer io.Writer, format string, query stri
 	return output.NewJsonOutputWriter(writer, transformer)
 }
 
-func (b CommandBuilder) executeCommand(context executor.ExecutionContext, writer output.OutputWriter, logger log.Logger) error {
-	if context.Plugin != nil {
-		return b.PluginExecutor.Call(context, writer, logger)
+func (b CommandBuilder) executeCommand(ctx executor.ExecutionContext, writer output.OutputWriter, logger log.Logger) error {
+	if ctx.Plugin != nil {
+		return b.PluginExecutor.Call(ctx, writer, logger)
 	}
-	return b.Executor.Call(context, writer, logger)
+	return b.Executor.Call(ctx, writer, logger)
+}
+
+func (b CommandBuilder) operationId() string {
+	bytes := make([]byte, 16)
+	_, _ = rand.Read(bytes)
+	return fmt.Sprintf("%x%x%x%x%x", bytes[0:4], bytes[4:6], bytes[6:8], bytes[8:10], bytes[10:])
 }
 
 func (b CommandBuilder) createOperationCommand(operation parser.Operation) *CommandDefinition {
@@ -326,11 +325,20 @@ func (b CommandBuilder) createOperationCommand(operation parser.Operation) *Comm
 				tenant = config.Tenant
 			}
 			insecure := context.Bool(FlagNameInsecure) || config.Insecure
+			timeout := time.Duration(context.Int(FlagNameCallTimeout)) * time.Second
+			if timeout < 0 {
+				return fmt.Errorf("Invalid value for '%s'", FlagNameCallTimeout)
+			}
+			maxAttempts := context.Int(FlagNameMaxAttempts)
+			if maxAttempts < 1 {
+				return fmt.Errorf("Invalid value for '%s'", FlagNameMaxAttempts)
+			}
 			debug := context.Bool(FlagNameDebug) || config.Debug
 			identityUri, err := b.createIdentityUri(context, *config, baseUri)
 			if err != nil {
 				return err
 			}
+			operationId := b.operationId()
 
 			executionContext := executor.NewExecutionContext(
 				organization,
@@ -342,10 +350,11 @@ func (b CommandBuilder) createOperationCommand(operation parser.Operation) *Comm
 				input,
 				parameters,
 				config.Auth,
-				insecure,
-				debug,
 				*identityUri,
-				operation.Plugin)
+				operation.Plugin,
+				debug,
+				*executor.NewExecutionSettings(operationId, config.Header, timeout, maxAttempts, insecure),
+			)
 
 			if wait != "" {
 				return b.executeWait(*executionContext, outputFormat, query, wait, waitTimeout)
@@ -354,11 +363,11 @@ func (b CommandBuilder) createOperationCommand(operation parser.Operation) *Comm
 		})
 }
 
-func (b CommandBuilder) executeWait(executionContext executor.ExecutionContext, outputFormat string, query string, wait string, waitTimeout int) error {
+func (b CommandBuilder) executeWait(ctx executor.ExecutionContext, outputFormat string, query string, wait string, waitTimeout int) error {
 	logger := log.NewDefaultLogger(b.StdErr)
 	outputWriter := output.NewMemoryOutputWriter()
 	for start := time.Now(); time.Since(start) < time.Duration(waitTimeout)*time.Second; {
-		err := b.execute(executionContext, "json", "", outputWriter)
+		err := b.execute(ctx, "json", "", outputWriter)
 		result, evaluationErr := b.evaluateWaitCondition(outputWriter.Response(), wait)
 		if evaluationErr != nil {
 			return evaluationErr
@@ -391,37 +400,37 @@ func (b CommandBuilder) evaluateWaitCondition(response output.ResponseInfo, wait
 	}
 	value, ok := result.(bool)
 	if !ok {
-		return false, fmt.Errorf("Error in wait condition: JMESPath expression needs to return boolean")
+		return false, errors.New("Error in wait condition: JMESPath expression needs to return boolean")
 	}
 	return value, nil
 }
 
-func (b CommandBuilder) execute(executionContext executor.ExecutionContext, outputFormat string, query string, outputWriter output.OutputWriter) error {
+func (b CommandBuilder) execute(ctx executor.ExecutionContext, outputFormat string, query string, outputWriter output.OutputWriter) error {
 	var wg sync.WaitGroup
 	wg.Add(3)
 	reader, writer := io.Pipe()
 	go func() {
 		defer wg.Done()
-		defer reader.Close()
+		defer func() { _ = reader.Close() }()
 		_, _ = io.Copy(b.StdOut, reader)
 	}()
 	errorReader, errorWriter := io.Pipe()
 	go func() {
 		defer wg.Done()
-		defer errorReader.Close()
+		defer func() { _ = errorReader.Close() }()
 		_, _ = io.Copy(b.StdErr, errorReader)
 	}()
 
 	var err error
 	go func() {
 		defer wg.Done()
-		defer writer.Close()
-		defer errorWriter.Close()
+		defer func() { _ = writer.Close() }()
+		defer func() { _ = errorWriter.Close() }()
 		if outputWriter == nil {
 			outputWriter = b.outputWriter(writer, outputFormat, query)
 		}
-		logger := b.logger(executionContext, errorWriter)
-		err = b.executeCommand(executionContext, outputWriter, logger)
+		logger := b.logger(ctx.Debug, errorWriter)
+		err = b.executeCommand(ctx, outputWriter, logger)
 	}()
 
 	wg.Wait()
@@ -502,8 +511,8 @@ func (b CommandBuilder) createAutoCompleteEnableCommand() *CommandDefinition {
 			if err != nil {
 				return err
 			}
-			fmt.Fprintln(b.StdOut, output)
-			return nil
+			_, err = fmt.Fprintln(b.StdOut, output)
+			return err
 		})
 }
 
@@ -535,7 +544,7 @@ func (b CommandBuilder) createAutoCompleteCompleteCommand(serviceVersion string)
 			handler := newAutoCompleteHandler()
 			words := handler.Find(commandText, command, exclude)
 			for _, word := range words {
-				fmt.Fprintln(b.StdOut, word)
+				_, _ = fmt.Fprintln(b.StdOut, word)
 			}
 			return nil
 		})
@@ -560,7 +569,7 @@ func (b CommandBuilder) createConfigCommand() *CommandDefinition {
 	const flagNameAuth = "auth"
 
 	flags := NewFlagBuilder().
-		AddFlag(NewFlag(flagNameAuth, fmt.Sprintf("Authorization type: %s, %s, %s", CredentialsAuth, LoginAuth, PatAuth), FlagTypeString)).
+		AddFlag(NewFlag(flagNameAuth, fmt.Sprintf("Authorization type: %s, %s, %s", config.AuthTypeCredentials, config.AuthTypeLogin, config.AuthTypePat), FlagTypeString)).
 		AddFlag(NewFlag(FlagNameProfile, "Profile to configure", FlagTypeString).
 			WithEnvVarName("UIPATH_PROFILE").
 			WithDefaultValue(config.DefaultProfile)).
@@ -569,6 +578,8 @@ func (b CommandBuilder) createConfigCommand() *CommandDefinition {
 
 	subcommands := []*CommandDefinition{
 		b.createConfigSetCommand(),
+		b.createCacheCommand(),
+		b.createOfflineCommand(),
 	}
 
 	return NewCommand("config", "Interactive Configuration", "Interactive command to configure the CLI").
@@ -587,7 +598,7 @@ func (b CommandBuilder) createConfigSetCommand() *CommandDefinition {
 	const flagNameValue = "value"
 
 	flags := NewFlagBuilder().
-		AddFlag(NewFlag(flagNameKey, "The key", FlagTypeString).
+		AddFlag(NewFlag(flagNameKey, "The key\n\n"+b.configSetKeyAllowedValues(), FlagTypeString).
 			WithRequired(true)).
 		AddFlag(NewFlag(flagNameValue, "The value to set", FlagTypeString).
 			WithRequired(true)).
@@ -608,6 +619,59 @@ func (b CommandBuilder) createConfigSetCommand() *CommandDefinition {
 		})
 }
 
+func (b CommandBuilder) configSetKeyAllowedValues() string {
+	builder := strings.Builder{}
+	builder.WriteString("Allowed values:")
+	for _, value := range ConfigKeys {
+		if strings.HasSuffix(value, ".") {
+			value = value + "<key>"
+		}
+		builder.WriteString("\n- " + value)
+	}
+	return builder.String()
+}
+
+func (b CommandBuilder) createCacheClearCommand() *CommandDefinition {
+	flags := NewFlagBuilder().
+		AddHelpFlag().
+		Build()
+
+	return NewCommand("clear", "Clears the cache", "Clears the cache").
+		WithFlags(flags).
+		WithAction(func(context *CommandExecContext) error {
+			handler := newCacheClearCommandHandler(b.StdOut)
+			return handler.Clear()
+		})
+}
+
+func (b CommandBuilder) createCacheCommand() *CommandDefinition {
+	flags := NewFlagBuilder().
+		AddHelpFlag().
+		Build()
+
+	subcommands := []*CommandDefinition{
+		b.createCacheClearCommand(),
+	}
+
+	return NewCommand("cache", "Caching-related commands", "Caching-related commands").
+		WithFlags(flags).
+		WithSubcommands(subcommands)
+}
+
+func (b CommandBuilder) createOfflineCommand() *CommandDefinition {
+	flags := NewFlagBuilder().
+		AddHelpFlag().
+		Build()
+
+	return NewCommand("offline", "Downloads external dependencies", "Downloads external dependencies for offline mode").
+		WithFlags(flags).
+		WithAction(func(context *CommandExecContext) error {
+			logger := b.logger(false, b.StdErr)
+			handler := newOfflineCommandHandler(b.StdOut, logger)
+			return handler.Execute()
+		})
+}
+
 func (b CommandBuilder) loadDefinitions(args []string, serviceVersion string) ([]parser.Definition, error) {
 	if len(args) <= 1 || strings.HasPrefix(args[1], "-") {
 		return b.DefinitionProvider.Index(serviceVersion)
@@ -616,8 +680,11 @@ func (b CommandBuilder) loadDefinitions(args []string, serviceVersion string) ([
 		return b.loadAllDefinitions(serviceVersion)
 	}
 	definition, err := b.DefinitionProvider.Load(args[1], serviceVersion)
-	if definition == nil {
+	if err != nil {
 		return nil, err
+	}
+	if definition == nil {
+		return b.DefinitionProvider.Index(serviceVersion)
 	}
 	return []parser.Definition{*definition}, err
 }
@@ -666,8 +733,8 @@ func (b CommandBuilder) createShowCommand(definitions []parser.Definition) *Comm
 			if err != nil {
 				return err
 			}
-			fmt.Fprintln(b.StdOut, output)
-			return nil
+			_, err = fmt.Fprintln(b.StdOut, output)
+			return err
 		})
 }
 

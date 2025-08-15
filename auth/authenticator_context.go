@@ -1,23 +1,38 @@
 package auth
 
-import "net/url"
+import (
+	"net/url"
+
+	"github.com/UiPath/uipathcli/log"
+)
 
 // AuthenticatorContext provides information required for authenticating requests.
 type AuthenticatorContext struct {
-	Type        string                 `json:"type"`
-	Config      map[string]interface{} `json:"config"`
-	IdentityUri url.URL                `json:"identityUri"`
-	Debug       bool                   `json:"debug"`
-	Insecure    bool                   `json:"insecure"`
-	Request     AuthenticatorRequest   `json:"request"`
+	Config      map[string]interface{}
+	IdentityUri url.URL
+	OperationId string
+	Insecure    bool
+	Debug       bool
+	Request     AuthenticatorRequest
+	Logger      log.Logger
 }
 
 func NewAuthenticatorContext(
-	authType string,
 	config map[string]interface{},
 	identityUri url.URL,
-	debug bool,
+	operationId string,
 	insecure bool,
-	request AuthenticatorRequest) *AuthenticatorContext {
-	return &AuthenticatorContext{authType, config, identityUri, debug, insecure, request}
+	debug bool,
+	request AuthenticatorRequest,
+	logger log.Logger,
+) *AuthenticatorContext {
+	return &AuthenticatorContext{
+		config,
+		identityUri,
+		operationId,
+		insecure,
+		debug,
+		request,
+		logger,
+	}
 }

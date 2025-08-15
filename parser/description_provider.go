@@ -37,7 +37,7 @@ var descriptions = map[string]*descriptionInfo{
 	"orchestrator libraries":                newDescriptionInfo("Repositories for reusable components", "Manage reusable components used in automation workflows."),
 	"orchestrator licenses-named-user":      newDescriptionInfo("User-specific licenses", "Licenses granted to a specific user in the system, typically identified by their username."),
 	"orchestrator licenses-runtime":         newDescriptionInfo("Licenses for robot runtime capacity", "A runtime license refers to a licensing model where the license is granted to an unattended robot per run."),
-	"orchestrator licensing":                newDescriptionInfo("License units", "APIs to aquire and release license units."),
+	"orchestrator licensing":                newDescriptionInfo("License units", "APIs to acquire and release license units."),
 	"orchestrator logs":                     newDescriptionInfo("Recorded activities and events", "Records of the activities and events that occur during the execution of a process."),
 	"orchestrator machines":                 newDescriptionInfo("Managed hosts for robots", "Physical or virtual machine (computer) where to deploy a UiPath robot for executing automation processes."),
 	"orchestrator maintenance":              newDescriptionInfo("Maintenance mode", "Maintenance mode provides a simplified solution for stopping all Orchestrator activity."),
@@ -83,6 +83,7 @@ var descriptions = map[string]*descriptionInfo{
 	"orchestrator translations":             newDescriptionInfo("Translation resources", "Translations resources to provide multilingual UI."),
 	"orchestrator users":                    newDescriptionInfo("Manage users", "Users are individuals who have access to the Orchestrator's features."),
 	"orchestrator webhooks":                 newDescriptionInfo("Notifications of changes", "Webhooks enable real-time notifications about changes or updates in Orchestrator to other applications."),
+	"studio":                                newDescriptionInfo("UiPath Studio", "UiPath Studio commands for analyzing, packaging, testing and publishing your UiPath Studio projects."),
 }
 
 func LookupDescription(name string) *descriptionInfo {

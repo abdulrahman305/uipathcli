@@ -18,7 +18,7 @@ func TestConfigSetUnknownKey(t *testing.T) {
 }
 
 func TestConfigSetCreatesNewProfile(t *testing.T) {
-	configFile := createFile(t)
+	configFile := TempFile(t)
 	existingConfig := `profiles:
 - name: default
   organization: initial-org
@@ -46,7 +46,7 @@ func TestConfigSetCreatesNewProfile(t *testing.T) {
 }
 
 func TestConfigSetUpdatesExistingProfile(t *testing.T) {
-	configFile := createFile(t)
+	configFile := TempFile(t)
 	existingConfig := `profiles:
 - name: existing
   organization: initial-org
@@ -72,7 +72,7 @@ func TestConfigSetUpdatesExistingProfile(t *testing.T) {
 }
 
 func TestConfigSetOrganization(t *testing.T) {
-	configFile := createFile(t)
+	configFile := TempFile(t)
 	context := NewContextBuilder().
 		WithConfigFile(configFile).
 		Build()
@@ -93,7 +93,7 @@ func TestConfigSetOrganization(t *testing.T) {
 }
 
 func TestConfigSetTenant(t *testing.T) {
-	configFile := createFile(t)
+	configFile := TempFile(t)
 	context := NewContextBuilder().
 		WithConfigFile(configFile).
 		Build()
@@ -114,7 +114,7 @@ func TestConfigSetTenant(t *testing.T) {
 }
 
 func TestConfigSetUri(t *testing.T) {
-	configFile := createFile(t)
+	configFile := TempFile(t)
 	context := NewContextBuilder().
 		WithConfigFile(configFile).
 		Build()
@@ -146,7 +146,7 @@ func TestConfigInvalidUri(t *testing.T) {
 }
 
 func TestConfigSetInsecure(t *testing.T) {
-	configFile := createFile(t)
+	configFile := TempFile(t)
 	context := NewContextBuilder().
 		WithConfigFile(configFile).
 		Build()
@@ -167,7 +167,7 @@ func TestConfigSetInsecure(t *testing.T) {
 }
 
 func TestConfigSetDebug(t *testing.T) {
-	configFile := createFile(t)
+	configFile := TempFile(t)
 	context := NewContextBuilder().
 		WithConfigFile(configFile).
 		Build()
@@ -210,7 +210,7 @@ func TestConfigInvalidDebug(t *testing.T) {
 }
 
 func TestConfigSetHeader(t *testing.T) {
-	configFile := createFile(t)
+	configFile := TempFile(t)
 	context := NewContextBuilder().
 		WithConfigFile(configFile).
 		Build()
@@ -232,7 +232,7 @@ func TestConfigSetHeader(t *testing.T) {
 }
 
 func TestConfigSetParameter(t *testing.T) {
-	configFile := createFile(t)
+	configFile := TempFile(t)
 	context := NewContextBuilder().
 		WithConfigFile(configFile).
 		Build()
@@ -254,7 +254,7 @@ func TestConfigSetParameter(t *testing.T) {
 }
 
 func TestConfigSetAuthGrantType(t *testing.T) {
-	configFile := createFile(t)
+	configFile := TempFile(t)
 	context := NewContextBuilder().
 		WithConfigFile(configFile).
 		Build()
@@ -276,7 +276,7 @@ func TestConfigSetAuthGrantType(t *testing.T) {
 }
 
 func TestConfigSetAuthScopes(t *testing.T) {
-	configFile := createFile(t)
+	configFile := TempFile(t)
 	context := NewContextBuilder().
 		WithConfigFile(configFile).
 		Build()
@@ -298,7 +298,7 @@ func TestConfigSetAuthScopes(t *testing.T) {
 }
 
 func TestConfigSetAuthProperties(t *testing.T) {
-	configFile := createFile(t)
+	configFile := TempFile(t)
 	context := NewContextBuilder().
 		WithConfigFile(configFile).
 		Build()
@@ -321,7 +321,7 @@ func TestConfigSetAuthProperties(t *testing.T) {
 }
 
 func TestConfigSetServiceVersion(t *testing.T) {
-	configFile := createFile(t)
+	configFile := TempFile(t)
 	context := NewContextBuilder().
 		WithConfigFile(configFile).
 		Build()
@@ -338,5 +338,38 @@ func TestConfigSetServiceVersion(t *testing.T) {
 `
 	if string(config) != expectedConfig {
 		t.Errorf("Expected generated config %v, but got %v", expectedConfig, string(config))
+	}
+}
+
+func TestConfigSetAuthUri(t *testing.T) {
+	configFile := TempFile(t)
+	context := NewContextBuilder().
+		WithConfigFile(configFile).
+		Build()
+
+	RunCli([]string{"config", "set", "--key", "auth.uri", "--value", "https://alpha.uipath.com/identity_"}, context)
+
+	config, err := os.ReadFile(configFile)
+	if err != nil {
+		t.Errorf("Config file does not exist: %v", err)
+	}
+	expectedConfig := `profiles:
+- name: default
+  auth:
+    uri: https://alpha.uipath.com/identity_
+`
+	if string(config) != expectedConfig {
+		t.Errorf("Expected generated config %v, but got %v", expectedConfig, string(config))
+	}
+}
+
+func TestConfigInvalidAuthUri(t *testing.T) {
+	context := NewContextBuilder().
+		Build()
+
+	result := RunCli([]string{"config", "set", "--key", "auth.uri", "--value", "invalid uri\t"}, context)
+
+	if !strings.HasPrefix(result.StdErr, "Invalid value for 'auth.uri'") {
+		t.Errorf("Expected invalid auth.uri error, but got %v", result.StdErr)
 	}
 }

@@ -12,14 +12,13 @@ type PatAuthenticator struct{}
 
 func (a PatAuthenticator) Auth(ctx AuthenticatorContext) AuthenticatorResult {
 	if !a.enabled(ctx) {
-		return *AuthenticatorSuccess(ctx.Request.Header, ctx.Config)
+		return *AuthenticatorSuccess(nil)
 	}
 	pat, err := a.getPat(ctx)
 	if err != nil {
 		return *AuthenticatorError(fmt.Errorf("Invalid PAT authenticator configuration: %w", err))
 	}
-	ctx.Request.Header["Authorization"] = "Bearer " + pat
-	return *AuthenticatorSuccess(ctx.Request.Header, ctx.Config)
+	return *AuthenticatorSuccess(NewBearerToken(pat))
 }
 
 func (a PatAuthenticator) enabled(ctx AuthenticatorContext) bool {
@@ -27,12 +26,13 @@ func (a PatAuthenticator) enabled(ctx AuthenticatorContext) bool {
 }
 
 func (a PatAuthenticator) getPat(ctx AuthenticatorContext) (string, error) {
-	return a.parseRequiredString(ctx.Config, "pat", os.Getenv(PatEnvVarName))
+	return a.parseRequiredString(ctx.Config, "pat", PatEnvVarName)
 }
 
-func (a PatAuthenticator) parseRequiredString(config map[string]interface{}, name string, override string) (string, error) {
-	if override != "" {
-		return override, nil
+func (a PatAuthenticator) parseRequiredString(config map[string]interface{}, name string, envVarName string) (string, error) {
+	envVarValue := os.Getenv(envVarName)
+	if envVarValue != "" {
+		return envVarValue, nil
 	}
 	value := config[name]
 	result, valid := value.(string)

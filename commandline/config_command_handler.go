@@ -27,80 +27,106 @@ const maskMessage = "*******"
 const successfullyConfiguredMessage = "Successfully configured uipath CLI"
 const successfullySetMessage = "Successfully set config value"
 
-const CredentialsAuth = "credentials"
-const LoginAuth = "login"
-const PatAuth = "pat"
+const ConfigKeyServiceVersion = "serviceVersion"
+const ConfigKeyOrganization = "organization"
+const ConfigKeyTenant = "tenant"
+const ConfigKeyUri = "uri"
+const ConfigKeyInsecure = "insecure"
+const ConfigKeyDebug = "debug"
+const ConfigKeyAuthGrantType = "auth.grantType"
+const ConfigKeyAuthScopes = "auth.scopes"
+const ConfigKeyAuthUri = "auth.uri"
+const ConfigKeyAuthProperties = "auth.properties."
+const ConfigKeyHeader = "header."
+const ConfigKeyParameter = "parameter."
+
+var ConfigKeys = []string{
+	ConfigKeyServiceVersion,
+	ConfigKeyOrganization,
+	ConfigKeyTenant,
+	ConfigKeyUri,
+	ConfigKeyInsecure,
+	ConfigKeyDebug,
+	ConfigKeyAuthGrantType,
+	ConfigKeyAuthScopes,
+	ConfigKeyAuthUri,
+	ConfigKeyAuthProperties,
+	ConfigKeyHeader,
+	ConfigKeyParameter,
+}
 
 func (h configCommandHandler) Set(key string, value string, profileName string) error {
-	config := h.getOrCreateProfile(profileName)
-	err := h.setConfigValue(&config, key, value)
+	cfg := h.getOrCreateProfile(profileName)
+	err := h.setConfigValue(&cfg, key, value)
 	if err != nil {
 		return err
 	}
-	err = h.ConfigProvider.Update(profileName, config)
+	err = h.ConfigProvider.Update(profileName, cfg)
 	if err != nil {
 		return err
 	}
-	fmt.Fprintln(h.StdOut, successfullySetMessage)
+	_, _ = fmt.Fprintln(h.StdOut, successfullySetMessage)
 	return nil
 }
 
-func (h configCommandHandler) setConfigValue(config *config.Config, key string, value string) error {
+func (h configCommandHandler) setConfigValue(cfg *config.Config, key string, value string) error {
 	keyParts := strings.Split(key, ".")
-	if key == "serviceVersion" {
-		config.SetServiceVersion(value)
+	if key == ConfigKeyServiceVersion {
+		cfg.SetServiceVersion(value)
 		return nil
-	} else if key == "organization" {
-		config.ConfigureOrgTenant(value, "")
+	} else if key == ConfigKeyOrganization {
+		cfg.SetOrganization(value)
 		return nil
-	} else if key == "tenant" {
-		config.ConfigureOrgTenant("", value)
+	} else if key == ConfigKeyTenant {
+		cfg.SetTenant(value)
 		return nil
-	} else if key == "uri" {
-		return config.SetUri(value)
-	} else if key == "insecure" {
+	} else if key == ConfigKeyUri {
+		return cfg.SetUri(value)
+	} else if key == ConfigKeyInsecure {
 		insecure, err := h.convertToBool(value)
 		if err != nil {
-			return fmt.Errorf("Invalid value for 'insecure': %w", err)
+			return fmt.Errorf("Invalid value for '%s': %w", ConfigKeyInsecure, err)
 		}
-		config.SetInsecure(insecure)
+		cfg.SetInsecure(insecure)
 		return nil
-	} else if key == "debug" {
+	} else if key == ConfigKeyDebug {
 		debug, err := h.convertToBool(value)
 		if err != nil {
-			return fmt.Errorf("Invalid value for 'debug': %w", err)
+			return fmt.Errorf("Invalid value for '%s': %w", ConfigKeyDebug, err)
 		}
-		config.SetDebug(debug)
+		cfg.SetDebug(debug)
 		return nil
-	} else if key == "auth.grantType" {
-		config.SetAuthGrantType(value)
+	} else if key == ConfigKeyAuthGrantType {
+		cfg.SetAuthGrantType(value)
 		return nil
-	} else if key == "auth.scopes" {
-		config.SetAuthScopes(value)
+	} else if key == ConfigKeyAuthScopes {
+		cfg.SetAuthScopes(value)
 		return nil
-	} else if h.isHeaderKey(keyParts) {
-		config.SetHeader(keyParts[1], value)
+	} else if key == ConfigKeyAuthUri {
+		return cfg.SetAuthUri(value)
+	} else if h.isHeaderKey(key, keyParts) {
+		cfg.SetHeader(keyParts[1], value)
 		return nil
-	} else if h.isParameterKey(keyParts) {
-		config.SetParameter(keyParts[1], value)
+	} else if h.isParameterKey(key, keyParts) {
+		cfg.SetParameter(keyParts[1], value)
 		return nil
-	} else if h.isAuthPropertyKey(keyParts) {
-		config.SetAuthProperty(keyParts[2], value)
+	} else if h.isAuthPropertyKey(key, keyParts) {
+		cfg.SetAuthProperty(keyParts[2], value)
 		return nil
 	}
 	return fmt.Errorf("Unknown config key '%s'", key)
 }
 
-func (h configCommandHandler) isHeaderKey(keyParts []string) bool {
-	return len(keyParts) == 2 && keyParts[0] == "header"
+func (h configCommandHandler) isHeaderKey(key string, keyParts []string) bool {
+	return strings.HasPrefix(key, ConfigKeyHeader) && len(keyParts) == 2
 }
 
-func (h configCommandHandler) isParameterKey(keyParts []string) bool {
-	return len(keyParts) == 2 && keyParts[0] == "parameter"
+func (h configCommandHandler) isParameterKey(key string, keyParts []string) bool {
+	return strings.HasPrefix(key, ConfigKeyParameter) && len(keyParts) == 2
 }
 
-func (h configCommandHandler) isAuthPropertyKey(keyParts []string) bool {
-	return len(keyParts) == 3 && keyParts[0] == "auth" && keyParts[1] == "properties"
+func (h configCommandHandler) isAuthPropertyKey(key string, keyParts []string) bool {
+	return strings.HasPrefix(key, ConfigKeyAuthProperties) && len(keyParts) == 3
 }
 
 func (h configCommandHandler) convertToBool(value string) (bool, error) {
@@ -115,163 +141,120 @@ func (h configCommandHandler) convertToBool(value string) (bool, error) {
 
 func (h configCommandHandler) Configure(auth string, profileName string) error {
 	switch auth {
-	case CredentialsAuth:
+	case config.AuthTypeCredentials:
 		return h.configureCredentials(profileName)
-	case LoginAuth:
+	case config.AuthTypeLogin:
 		return h.configureLogin(profileName)
-	case PatAuth:
+	case config.AuthTypePat:
 		return h.configurePat(profileName)
 	case "":
 		return h.configure(profileName)
 	}
-	return fmt.Errorf("Invalid auth, supported values: %s, %s, %s", CredentialsAuth, LoginAuth, PatAuth)
+	return fmt.Errorf("Invalid auth, supported values: %s, %s, %s", config.AuthTypeCredentials, config.AuthTypeLogin, config.AuthTypePat)
 }
 
 func (h configCommandHandler) configure(profileName string) error {
-	config := h.getOrCreateProfile(profileName)
+	cfg := h.getOrCreateProfile(profileName)
 	reader := bufio.NewReader(h.StdIn)
 
-	organization, tenant, err := h.readOrgTenantInput(config, reader)
+	builder := config.NewConfigBuilder(cfg)
+	err := h.readOrgTenantInput(builder, reader)
+	if err != nil {
+		return nil
+	}
+	err = h.readAuthInput(builder, reader)
 	if err != nil {
 		return nil
 	}
 
-	authChanged := h.readAuthInput(config, reader)
-	orgTenantChanged := config.ConfigureOrgTenant(organization, tenant)
-
-	if orgTenantChanged || authChanged {
-		err = h.ConfigProvider.Update(profileName, config)
-		if err != nil {
-			return err
-		}
-		fmt.Fprintln(h.StdOut, successfullyConfiguredMessage)
-	}
-	return nil
+	return h.updateConfigIfNeeded(builder, profileName)
 }
 
-func (h configCommandHandler) readAuthInput(config config.Config, reader *bufio.Reader) bool {
-	authType := h.readAuthTypeInput(config, reader)
+func (h configCommandHandler) readAuthInput(builder *config.ConfigBuilder, reader *bufio.Reader) error {
+	authType := h.readAuthTypeInput(builder.Config, reader)
 	switch authType {
-	case CredentialsAuth:
-		clientId, clientSecret, err := h.readCredentialsInput(config, reader)
-		if err != nil {
-			return false
-		}
-		return config.ConfigureCredentialsAuth(clientId, clientSecret)
-	case LoginAuth:
-		clientId, redirectUri, scopes, err := h.readLoginInput(config, reader)
-		if err != nil {
-			return false
-		}
-		return config.ConfigureLoginAuth(clientId, redirectUri, scopes)
-	case PatAuth:
-		pat, err := h.readPatInput(config, reader)
-		if err != nil {
-			return false
-		}
-		return config.ConfigurePatAuth(pat)
+	case config.AuthTypeCredentials:
+		return h.readCredentialsInput(builder, reader)
+	case config.AuthTypeLogin:
+		return h.readLoginInput(builder, reader)
+	case config.AuthTypePat:
+		return h.readPatInput(builder, reader)
 	default:
-		return false
+		return nil
 	}
 }
 
 func (h configCommandHandler) configureCredentials(profileName string) error {
-	config := h.getOrCreateProfile(profileName)
+	cfg := h.getOrCreateProfile(profileName)
 	reader := bufio.NewReader(h.StdIn)
 
-	organization, tenant, err := h.readOrgTenantInput(config, reader)
+	builder := config.NewConfigBuilder(cfg)
+	err := h.readOrgTenantInput(builder, reader)
 	if err != nil {
 		return nil
 	}
-	clientId, clientSecret, err := h.readCredentialsInput(config, reader)
+	err = h.readCredentialsInput(builder, reader)
 	if err != nil {
 		return nil
 	}
 
-	orgTenantChanged := config.ConfigureOrgTenant(organization, tenant)
-	authChanged := config.ConfigureCredentialsAuth(clientId, clientSecret)
-
-	if orgTenantChanged || authChanged {
-		err = h.ConfigProvider.Update(profileName, config)
-		if err != nil {
-			return err
-		}
-		fmt.Fprintln(h.StdOut, successfullyConfiguredMessage)
-	}
-	return nil
+	return h.updateConfigIfNeeded(builder, profileName)
 }
 
 func (h configCommandHandler) configureLogin(profileName string) error {
-	config := h.getOrCreateProfile(profileName)
+	cfg := h.getOrCreateProfile(profileName)
 	reader := bufio.NewReader(h.StdIn)
 
-	organization, tenant, err := h.readOrgTenantInput(config, reader)
+	builder := config.NewConfigBuilder(cfg)
+	err := h.readOrgTenantInput(builder, reader)
 	if err != nil {
 		return nil
 	}
-	clientId, redirectUri, scopes, err := h.readLoginInput(config, reader)
+	err = h.readLoginInput(builder, reader)
 	if err != nil {
 		return nil
 	}
 
-	orgTenantChanged := config.ConfigureOrgTenant(organization, tenant)
-	authChanged := config.ConfigureLoginAuth(clientId, redirectUri, scopes)
-
-	if orgTenantChanged || authChanged {
-		err = h.ConfigProvider.Update(profileName, config)
-		if err != nil {
-			return err
-		}
-		fmt.Fprintln(h.StdOut, successfullyConfiguredMessage)
-	}
-	return nil
+	return h.updateConfigIfNeeded(builder, profileName)
 }
 
 func (h configCommandHandler) configurePat(profileName string) error {
-	config := h.getOrCreateProfile(profileName)
+	cfg := h.getOrCreateProfile(profileName)
 	reader := bufio.NewReader(h.StdIn)
 
-	organization, tenant, err := h.readOrgTenantInput(config, reader)
+	builder := config.NewConfigBuilder(cfg)
+	err := h.readOrgTenantInput(builder, reader)
 	if err != nil {
 		return nil
 	}
-	pat, err := h.readPatInput(config, reader)
+	err = h.readPatInput(builder, reader)
 	if err != nil {
 		return nil
 	}
 
-	orgTenantChanged := config.ConfigureOrgTenant(organization, tenant)
-	authChanged := config.ConfigurePatAuth(pat)
+	return h.updateConfigIfNeeded(builder, profileName)
+}
 
-	if orgTenantChanged || authChanged {
-		err = h.ConfigProvider.Update(profileName, config)
-		if err != nil {
-			return err
-		}
-		fmt.Fprintln(h.StdOut, successfullyConfiguredMessage)
+func (h configCommandHandler) updateConfigIfNeeded(builder *config.ConfigBuilder, profileName string) error {
+	updatedConfig, changed := builder.Build()
+	if !changed {
+		return nil
 	}
+
+	err := h.ConfigProvider.Update(profileName, updatedConfig)
+	if err != nil {
+		return err
+	}
+	_, _ = fmt.Fprintln(h.StdOut, successfullyConfiguredMessage)
 	return nil
 }
 
-func (h configCommandHandler) getAuthType(config config.Config) string {
-	if config.Pat() != "" {
-		return PatAuth
-	}
-	if config.ClientId() != "" && config.RedirectUri() != "" && config.Scopes() != "" {
-		return LoginAuth
-	}
-	if config.ClientId() != "" && config.ClientSecret() != "" {
-		return CredentialsAuth
-	}
-	return ""
-}
-
 func (h configCommandHandler) getOrCreateProfile(profileName string) config.Config {
-	config := h.ConfigProvider.Config(profileName)
-	if config == nil {
+	cfg := h.ConfigProvider.Config(profileName)
+	if cfg == nil {
 		return h.ConfigProvider.New()
 	}
-	return *config
+	return *cfg
 }
 
 func (h configCommandHandler) getDisplayValue(value string, masked bool) string {
@@ -291,74 +274,102 @@ func (h configCommandHandler) maskValue(value string) string {
 	return maskMessage + value[len(value)-4:]
 }
 
-func (h configCommandHandler) readUserInput(message string, reader *bufio.Reader) (string, error) {
-	fmt.Fprint(h.StdOut, message+" ")
+func (h configCommandHandler) readUserInput(message string, reader *bufio.Reader) (*string, error) {
+	_, err := fmt.Fprint(h.StdOut, message+" ")
+	if err != nil {
+		return nil, err
+	}
 	value, err := reader.ReadString('\n')
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	return strings.Trim(value, " \r\n\t"), nil
+	value = strings.Trim(value, "\r\n")
+	if value == "" {
+		return nil, nil
+	}
+	value = strings.Trim(value, " \t")
+	return &value, nil
 }
 
-func (h configCommandHandler) readOrgTenantInput(config config.Config, reader *bufio.Reader) (string, string, error) {
-	message := fmt.Sprintf("Enter organization [%s]:", h.getDisplayValue(config.Organization, false))
+func (h configCommandHandler) readOrgTenantInput(builder *config.ConfigBuilder, reader *bufio.Reader) error {
+	cfg := builder.Config
+	message := fmt.Sprintf("Enter organization [%s]:", h.getDisplayValue(cfg.Organization, false))
 	organization, err := h.readUserInput(message, reader)
 	if err != nil {
-		return "", "", err
+		return err
 	}
 
-	message = fmt.Sprintf("Enter tenant [%s]:", h.getDisplayValue(config.Tenant, false))
+	message = fmt.Sprintf("Enter tenant [%s]:", h.getDisplayValue(cfg.Tenant, false))
 	tenant, err := h.readUserInput(message, reader)
 	if err != nil {
-		return "", "", err
+		return err
 	}
 
-	return organization, tenant, nil
+	builder.
+		WithOrganization(organization).
+		WithTenant(tenant)
+	return nil
 }
 
-func (h configCommandHandler) readCredentialsInput(config config.Config, reader *bufio.Reader) (string, string, error) {
-	message := fmt.Sprintf("Enter client id [%s]:", h.getDisplayValue(config.ClientId(), true))
+func (h configCommandHandler) readCredentialsInput(builder *config.ConfigBuilder, reader *bufio.Reader) error {
+	cfg := builder.Config
+	message := fmt.Sprintf("Enter client id [%s]:", h.getDisplayValue(cfg.ClientId(), true))
 	clientId, err := h.readUserInput(message, reader)
 	if err != nil {
-		return "", "", err
+		return err
 	}
 
-	message = fmt.Sprintf("Enter client secret [%s]:", h.getDisplayValue(config.ClientSecret(), true))
+	message = fmt.Sprintf("Enter client secret [%s]:", h.getDisplayValue(cfg.ClientSecret(), true))
 	clientSecret, err := h.readUserInput(message, reader)
 	if err != nil {
-		return "", "", err
+		return err
 	}
 
-	return clientId, clientSecret, nil
+	builder.WithCredentials(clientId, clientSecret)
+	return nil
 }
 
-func (h configCommandHandler) readLoginInput(config config.Config, reader *bufio.Reader) (string, string, string, error) {
-	message := fmt.Sprintf("Enter client id [%s]:", h.getDisplayValue(config.ClientId(), true))
+func (h configCommandHandler) readLoginInput(builder *config.ConfigBuilder, reader *bufio.Reader) error {
+	cfg := builder.Config
+	message := fmt.Sprintf("Enter client id [%s]:", h.getDisplayValue(cfg.ClientId(), true))
 	clientId, err := h.readUserInput(message, reader)
 	if err != nil {
-		return "", "", "", err
+		return err
 	}
-	message = fmt.Sprintf("Enter redirect uri [%s]:", h.getDisplayValue(config.RedirectUri(), false))
+	message = fmt.Sprintf("Enter client secret (only for confidential apps) [%s]:", h.getDisplayValue(cfg.ClientSecret(), true))
+	clientSecret, err := h.readUserInput(message, reader)
+	if err != nil {
+		return err
+	}
+	message = fmt.Sprintf("Enter redirect uri [%s]:", h.getDisplayValue(cfg.RedirectUri(), false))
 	redirectUri, err := h.readUserInput(message, reader)
 	if err != nil {
-		return "", "", "", err
+		return err
 	}
-	message = fmt.Sprintf("Enter scopes [%s]:", h.getDisplayValue(config.Scopes(), false))
+	message = fmt.Sprintf("Enter scopes [%s]:", h.getDisplayValue(cfg.Scopes(), false))
 	scopes, err := h.readUserInput(message, reader)
 	if err != nil {
-		return "", "", "", err
+		return err
 	}
 
-	return clientId, redirectUri, scopes, nil
+	builder.WithLogin(clientId, clientSecret, redirectUri, scopes)
+	return nil
 }
 
-func (h configCommandHandler) readPatInput(config config.Config, reader *bufio.Reader) (string, error) {
-	message := fmt.Sprintf("Enter personal access token [%s]:", h.getDisplayValue(config.Pat(), true))
-	return h.readUserInput(message, reader)
+func (h configCommandHandler) readPatInput(builder *config.ConfigBuilder, reader *bufio.Reader) error {
+	cfg := builder.Config
+	message := fmt.Sprintf("Enter personal access token [%s]:", h.getDisplayValue(cfg.Pat(), true))
+	pat, err := h.readUserInput(message, reader)
+	if err != nil {
+		return err
+	}
+
+	builder.WithPat(pat)
+	return nil
 }
 
-func (h configCommandHandler) readAuthTypeInput(config config.Config, reader *bufio.Reader) string {
-	authType := h.getAuthType(config)
+func (h configCommandHandler) readAuthTypeInput(cfg config.Config, reader *bufio.Reader) string {
+	authType := cfg.AuthType()
 	for {
 		message := fmt.Sprintf(`Authentication type [%s]:
   [1] credentials - Client Id and Client Secret
@@ -369,15 +380,17 @@ Select:`, h.getDisplayValue(authType, false))
 		if err != nil {
 			return ""
 		}
-		switch input {
-		case "":
+		if input == nil {
 			return authType
+		}
+		switch *input {
+		case "":
 		case "1":
-			return CredentialsAuth
+			return config.AuthTypeCredentials
 		case "2":
-			return LoginAuth
+			return config.AuthTypeLogin
 		case "3":
-			return PatAuth
+			return config.AuthTypePat
 		}
 	}
 }

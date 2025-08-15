@@ -2,7 +2,8 @@ package test
 
 import (
 	"bytes"
-	"fmt"
+	"errors"
+	"net/http"
 	"strings"
 	"testing"
 
@@ -166,8 +167,8 @@ paths:
 		WithDefinition("mypluginservice", definition).
 		WithConfig(config).
 		WithCommandPlugin(&pluginCommand).
-		WithResponse(200, "").
-		WithIdentityResponse(200, `{"access_token": "my-jwt-access-token", "expires_in": 3600, "token_type": "Bearer", "scope": "OR.Ping"}`).
+		WithResponse(http.StatusOK, "").
+		WithIdentityResponse(http.StatusOK, `{"access_token": "my-jwt-access-token", "expires_in": 3600, "token_type": "Bearer", "scope": "OR.Ping"}`).
 		Build()
 
 	RunCli([]string{"mypluginservice", "my-plugin-command"}, context)
@@ -175,10 +176,15 @@ paths:
 	if !strings.Contains(pluginCommand.Context.BaseUri.String(), "http://127.0.0.1") {
 		t.Errorf("Expected plugin command to retrieve base uri, but got: %v", pluginCommand.Context.BaseUri.String())
 	}
-	expectedAuthorization := "Bearer my-jwt-access-token"
-	authorization := pluginCommand.Context.Auth.Header["Authorization"]
-	if authorization != expectedAuthorization {
-		t.Errorf("Expected plugin command to retrieve authorization header %v, but got: %v", expectedAuthorization, authorization)
+	expectedAuthTokenType := "Bearer"
+	actualAuthTokenType := pluginCommand.Context.Auth.Token.Type
+	if actualAuthTokenType != expectedAuthTokenType {
+		t.Errorf("Expected plugin command to retrieve auth token type %v, but got: %v", expectedAuthTokenType, actualAuthTokenType)
+	}
+	expectedAuthToken := "my-jwt-access-token"
+	actualAuthToken := pluginCommand.Context.Auth.Token.Value
+	if actualAuthToken != expectedAuthToken {
+		t.Errorf("Expected plugin command to retrieve auth token %v, but got: %v", expectedAuthToken, actualAuthToken)
 	}
 }
 
@@ -196,14 +202,14 @@ profiles:
 		WithDefinition("mypluginservice", "").
 		WithConfig(config).
 		WithCommandPlugin(&pluginCommand).
-		WithResponse(200, "").
-		WithIdentityResponse(200, `{"access_token": "my-jwt-access-token", "expires_in": 3600, "token_type": "Bearer", "scope": "OR.Ping"}`).
+		WithResponse(http.StatusOK, "").
+		WithIdentityResponse(http.StatusOK, `{"access_token": "my-jwt-access-token", "expires_in": 3600, "token_type": "Bearer", "scope": "OR.Ping"}`).
 		Build()
 
 	RunCli([]string{"mypluginservice", "my-plugin-command"}, context)
 
-	if !pluginCommand.Context.Insecure {
-		t.Errorf("Expected insecure flag to be true, but got: %v", pluginCommand.Context.Insecure)
+	if !pluginCommand.Context.Settings.Insecure {
+		t.Errorf("Expected insecure flag to be true, but got: %v", pluginCommand.Context.Settings.Insecure)
 	}
 }
 
@@ -276,6 +282,54 @@ func TestPluginValidatesParameterType(t *testing.T) {
 	}
 }
 
+func TestPluginShowsParameterDefaultValue(t *testing.T) {
+	context := NewContextBuilder().
+		WithDefinition("mypluginservice", "").
+		WithCommandPlugin(ParametrizedPluginCommand{}).
+		Build()
+
+	result := RunCli([]string{"mypluginservice", "my-parametrized-command", "--help"}, context)
+
+	if !strings.Contains(result.StdOut, "--filter string (default: all)") {
+		t.Errorf("Expected default value in help output, but got: %v", result.StdOut)
+	}
+}
+
+func TestPluginShowsParameterAllowedValues(t *testing.T) {
+	context := NewContextBuilder().
+		WithDefinition("mypluginservice", "").
+		WithCommandPlugin(ParametrizedPluginCommand{}).
+		Build()
+
+	result := RunCli([]string{"mypluginservice", "my-parametrized-command", "--help"}, context)
+
+	if !strings.Contains(result.StdOut, "Allowed values:") {
+		t.Errorf("stdout does not contain allowed values, got: %v", result.StdOut)
+	}
+	if !strings.Contains(result.StdOut, "- all") {
+		t.Errorf("stdout does not contain first allowed value, got: %v", result.StdOut)
+	}
+	if !strings.Contains(result.StdOut, "- default") {
+		t.Errorf("stdout does not contain second allowed value, got: %v", result.StdOut)
+	}
+	if !strings.Contains(result.StdOut, "- none") {
+		t.Errorf("stdout does not third second allowed value, got: %v", result.StdOut)
+	}
+}
+
+func TestPluginDoesNotShowHiddenParameter(t *testing.T) {
+	context := NewContextBuilder().
+		WithDefinition("mypluginservice", "").
+		WithCommandPlugin(ParametrizedPluginCommand{}).
+		Build()
+
+	result := RunCli([]string{"mypluginservice", "my-parametrized-command", "--help"}, context)
+
+	if strings.Contains(result.StdOut, "--skip") {
+		t.Errorf("Expected help output not to show hidden parameter, but got: %v", result.StdOut)
+	}
+}
+
 type SimplePluginCommand struct{}
 
 func (c SimplePluginCommand) Command() plugin.Command {
@@ -283,23 +337,23 @@ func (c SimplePluginCommand) Command() plugin.Command {
 		WithOperation("my-plugin-command", "Simple Command", "This is a simple plugin command")
 }
 
-func (c SimplePluginCommand) Execute(context plugin.ExecutionContext, writer output.OutputWriter, logger log.Logger) error {
+func (c SimplePluginCommand) Execute(ctx plugin.ExecutionContext, writer output.OutputWriter, logger log.Logger) error {
 	logger.LogError("Simple plugin logging output")
-	return writer.WriteResponse(*output.NewResponseInfo(200, "200 OK", "https", map[string][]string{}, bytes.NewReader([]byte("Simple plugin output"))))
+	return writer.WriteResponse(*output.NewResponseInfo(http.StatusOK, "200 OK", "https", map[string][]string{}, bytes.NewReader([]byte("Simple plugin output"))))
 }
 
 type ContextPluginCommand struct {
 	Context plugin.ExecutionContext
 }
 
-func (c ContextPluginCommand) Command() plugin.Command {
+func (c *ContextPluginCommand) Command() plugin.Command {
 	return *plugin.NewCommand("mypluginservice").
 		WithOperation("my-plugin-command", "Simple Command", "This is a simple plugin command").
-		WithParameter("filter", plugin.ParameterTypeString, "This is a filter", false)
+		WithParameter(plugin.NewParameter("filter", plugin.ParameterTypeString, "This is a filter"))
 }
 
-func (c *ContextPluginCommand) Execute(context plugin.ExecutionContext, writer output.OutputWriter, logger log.Logger) error {
-	c.Context = context
+func (c *ContextPluginCommand) Execute(ctx plugin.ExecutionContext, writer output.OutputWriter, logger log.Logger) error {
+	c.Context = ctx
 	return nil
 }
 
@@ -310,8 +364,8 @@ func (c ErrorPluginCommand) Command() plugin.Command {
 		WithOperation("my-failed-command", "Command fails", "This command always fails")
 }
 
-func (c ErrorPluginCommand) Execute(context plugin.ExecutionContext, writer output.OutputWriter, logger log.Logger) error {
-	return fmt.Errorf("Internal server error when calling mypluginservice")
+func (c ErrorPluginCommand) Execute(ctx plugin.ExecutionContext, writer output.OutputWriter, logger log.Logger) error {
+	return errors.New("Internal server error when calling mypluginservice")
 }
 
 type HideOperationPluginCommand struct{}
@@ -322,8 +376,8 @@ func (c HideOperationPluginCommand) Command() plugin.Command {
 		IsHidden()
 }
 
-func (c HideOperationPluginCommand) Execute(context plugin.ExecutionContext, writer output.OutputWriter, logger log.Logger) error {
-	return fmt.Errorf("my-hidden-command is not supported")
+func (c HideOperationPluginCommand) Execute(ctx plugin.ExecutionContext, writer output.OutputWriter, logger log.Logger) error {
+	return errors.New("my-hidden-command is not supported")
 }
 
 type ParametrizedPluginCommand struct{}
@@ -331,9 +385,15 @@ type ParametrizedPluginCommand struct{}
 func (c ParametrizedPluginCommand) Command() plugin.Command {
 	return *plugin.NewCommand("mypluginservice").
 		WithOperation("my-parametrized-command", "Parametrized Command", "This is a plugin command with parameters").
-		WithParameter("take", plugin.ParameterTypeInteger, "This is a take parameter", true)
+		WithParameter(plugin.NewParameter("skip", plugin.ParameterTypeInteger, "This is a skip parameter").
+			WithHidden(true)).
+		WithParameter(plugin.NewParameter("take", plugin.ParameterTypeInteger, "This is a take parameter").
+			WithRequired(true)).
+		WithParameter(plugin.NewParameter("filter", plugin.ParameterTypeString, "This is a filter parameter").
+			WithDefaultValue("all").
+			WithAllowedValues([]interface{}{"all", "default", "none"}))
 }
 
-func (c ParametrizedPluginCommand) Execute(context plugin.ExecutionContext, writer output.OutputWriter, logger log.Logger) error {
+func (c ParametrizedPluginCommand) Execute(ctx plugin.ExecutionContext, writer output.OutputWriter, logger log.Logger) error {
 	return nil
 }

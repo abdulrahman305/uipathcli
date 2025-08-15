@@ -17,8 +17,14 @@ import (
 	"github.com/UiPath/uipathcli/parser"
 	"github.com/UiPath/uipathcli/plugin"
 	plugin_digitizer "github.com/UiPath/uipathcli/plugin/digitizer"
-	plugin_orchestrator "github.com/UiPath/uipathcli/plugin/orchestrator"
-	"github.com/UiPath/uipathcli/utils"
+	plugin_orchestrator_download "github.com/UiPath/uipathcli/plugin/orchestrator/download"
+	plugin_orchestrator_upload "github.com/UiPath/uipathcli/plugin/orchestrator/upload"
+	plugin_studio_analyze "github.com/UiPath/uipathcli/plugin/studio/analyze"
+	plugin_studio_pack "github.com/UiPath/uipathcli/plugin/studio/pack"
+	plugin_studio_publish "github.com/UiPath/uipathcli/plugin/studio/publish"
+	plugin_studio_restore "github.com/UiPath/uipathcli/plugin/studio/restore"
+	plugin_studio_testrun "github.com/UiPath/uipathcli/plugin/studio/testrun"
+	"github.com/UiPath/uipathcli/utils/stream"
 )
 
 //go:embed definitions/*.yaml
@@ -27,7 +33,7 @@ var embedded embed.FS
 func authenticators() []auth.Authenticator {
 	return []auth.Authenticator{
 		auth.NewPatAuthenticator(),
-		auth.NewOAuthAuthenticator(cache.NewFileCache(), auth.NewExecBrowserLauncher()),
+		auth.NewOAuthAuthenticator(cache.NewFileCache(), *auth.NewBrowserLauncher()),
 		auth.NewBearerAuthenticator(cache.NewFileCache()),
 	}
 }
@@ -39,8 +45,8 @@ func colorsSupported() bool {
 	return !omitColors
 }
 
-func stdIn() utils.Stream {
-	return utils.NewReaderStream(parser.RawBodyParameterName, os.Stdin)
+func stdIn() stream.Stream {
+	return stream.NewReaderStream(parser.RawBodyParameterName, os.Stdin)
 }
 
 func main() {
@@ -63,9 +69,14 @@ func main() {
 			commandline.NewDefinitionFileStore(os.Getenv("UIPATH_DEFINITIONS_PATH"), embedded),
 			parser.NewOpenApiParser(),
 			[]plugin.CommandPlugin{
-				plugin_digitizer.DigitizeCommand{},
-				plugin_orchestrator.UploadCommand{},
-				plugin_orchestrator.DownloadCommand{},
+				plugin_digitizer.NewDigitizeCommand(),
+				plugin_orchestrator_download.NewDownloadCommand(),
+				plugin_orchestrator_upload.NewUploadCommand(),
+				plugin_studio_pack.NewPackagePackCommand(),
+				plugin_studio_analyze.NewPackageAnalyzeCommand(),
+				plugin_studio_restore.NewPackageRestoreCommand(),
+				plugin_studio_publish.NewPackagePublishCommand(),
+				plugin_studio_testrun.NewTestRunCommand(),
 			},
 		),
 		*configProvider,

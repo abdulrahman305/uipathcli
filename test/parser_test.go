@@ -1,9 +1,103 @@
 package test
 
 import (
+	"net/http"
 	"strings"
 	"testing"
 )
+
+func TestUnknownCommandShowsError(t *testing.T) {
+	definition := `
+paths:
+  /ping:
+    get:
+      summary: Simple ping
+`
+	context := NewContextBuilder().
+		WithDefinition("myservice", definition).
+		Build()
+
+	result := RunCli([]string{"unknown"}, context)
+
+	if result.Error == nil || result.Error.Error() != "Command 'unknown' not found" {
+		t.Errorf("Unexpected error, got: %v", result.Error)
+	}
+}
+
+func TestUnknownFlagOnMainCommandShowsError(t *testing.T) {
+	definition := `
+paths:
+  /ping:
+    get:
+      summary: Simple ping
+`
+	context := NewContextBuilder().
+		WithDefinition("myservice", definition).
+		Build()
+
+	result := RunCli([]string{"--unknown", "myvalue"}, context)
+
+	if result.Error == nil || result.Error.Error() != "Incorrect usage: flag provided but not defined: -unknown" {
+		t.Errorf("Unexpected error, got: %v", result.Error)
+	}
+}
+
+func TestRunMainCommandShowsError(t *testing.T) {
+	definition := `
+paths:
+  /ping:
+    get:
+      summary: Simple ping
+`
+	context := NewContextBuilder().
+		WithDefinition("myservice", definition).
+		Build()
+
+	result := RunCli([]string{"--query", "myvalue"}, context)
+
+	if result.Error == nil || result.Error.Error() != `No command provided.
+
+Please provide service and operation command in the following format:
+uipath <service> <operation> --<argument> <value>` {
+		t.Errorf("Unexpected error, got: %v", result.Error)
+	}
+}
+
+func TestUnknownSubCommandShowsError(t *testing.T) {
+	definition := `
+paths:
+  /ping:
+    get:
+      summary: Simple ping
+`
+	context := NewContextBuilder().
+		WithDefinition("myservice", definition).
+		Build()
+
+	result := RunCli([]string{"myservice", "unknown"}, context)
+
+	if result.Error == nil || result.Error.Error() != "Command 'unknown' not found" {
+		t.Errorf("Unexpected error, got: %v", result.Error)
+	}
+}
+
+func TestUnknownFlagOnSubCommandShowsError(t *testing.T) {
+	definition := `
+paths:
+  /ping:
+    get:
+      summary: Simple ping
+`
+	context := NewContextBuilder().
+		WithDefinition("myservice", definition).
+		Build()
+
+	result := RunCli([]string{"myservice", "--unknown", "myvalue"}, context)
+
+	if result.Error == nil || result.Error.Error() != "Incorrect usage: flag provided but not defined: -unknown" {
+		t.Errorf("Unexpected error, got: %v", result.Error)
+	}
+}
 
 func TestInvalidDefinitionReturnsError(t *testing.T) {
 	definition := `
@@ -488,7 +582,7 @@ paths:
 
 	context := NewContextBuilder().
 		WithDefinition("myservice", definition).
-		WithResponse(200, "").
+		WithResponse(http.StatusOK, "").
 		Build()
 
 	result := RunCli([]string{"myservice", "ping", "--filter", "my-filter"}, context)
@@ -515,7 +609,7 @@ paths:
 
 	context := NewContextBuilder().
 		WithDefinition("myservice", definition).
-		WithResponse(200, "").
+		WithResponse(http.StatusOK, "").
 		Build()
 
 	result := RunCli([]string{"myservice", "ping", "--filter", "my-filter"}, context)

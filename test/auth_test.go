@@ -1,6 +1,7 @@
 package test
 
 import (
+	"net/http"
 	"strings"
 	"testing"
 )
@@ -20,7 +21,7 @@ paths:
 	context := NewContextBuilder().
 		WithDefinition("myservice", definition).
 		WithConfig(config).
-		WithResponse(200, "").
+		WithResponse(http.StatusOK, "").
 		Build()
 
 	result := RunCli([]string{"myservice", "ping"}, context)
@@ -49,13 +50,13 @@ paths:
 	context := NewContextBuilder().
 		WithDefinition("myservice", definition).
 		WithConfig(config).
-		WithResponse(200, "").
+		WithResponse(http.StatusOK, "").
 		WithIdentityResponse(500, "Internal Server Error").
 		Build()
 
 	result := RunCli([]string{"myservice", "ping"}, context)
 
-	if result.Error.Error() != "Error retrieving bearer token: Token service returned status code '500' and body 'Internal Server Error'" {
+	if result.Error.Error() != "Error retrieving bearer token: Service returned status code '500' and body 'Internal Server Error'" {
 		t.Errorf("Expected error from identity, but got: %v", result.Error)
 	}
 }
@@ -80,8 +81,8 @@ paths:
 	context := NewContextBuilder().
 		WithDefinition("myservice", definition).
 		WithConfig(config).
-		WithResponse(200, "").
-		WithIdentityResponse(200, `{"access_token": "my-jwt-access-token", "expires_in": 3600, "token_type": "Bearer", "scope": "OR.Ping"}`).
+		WithResponse(http.StatusOK, "").
+		WithIdentityResponse(http.StatusOK, `{"access_token": "my-jwt-access-token", "expires_in": 3600, "token_type": "Bearer", "scope": "OR.Ping"}`).
 		Build()
 
 	result := RunCli([]string{"myservice", "ping"}, context)
@@ -89,6 +90,38 @@ paths:
 	authorization := result.RequestHeader["authorization"]
 	if authorization != "Bearer my-jwt-access-token" {
 		t.Errorf("Expected bearer token from identity, but got: %v", authorization)
+	}
+}
+
+func TestBearerAuthForwardsRequestId(t *testing.T) {
+	config := `
+profiles:
+  - name: default
+    auth:
+      clientId: success-client-id
+      clientSecret: success-client-secret
+      properties:
+        custom: myvalue
+`
+	definition := `
+paths:
+  /ping:
+    get:
+      operationId: ping
+`
+
+	context := NewContextBuilder().
+		WithDefinition("myservice", definition).
+		WithConfig(config).
+		WithResponse(http.StatusOK, "").
+		WithIdentityResponse(http.StatusOK, `{"access_token": "my-jwt-access-token", "expires_in": 3600, "token_type": "Bearer", "scope": "OR.Ping"}`).
+		Build()
+
+	result := RunCli([]string{"myservice", "ping"}, context)
+
+	requestId := result.RequestHeader["x-request-id"]
+	if requestId == "" {
+		t.Errorf("Expected x-request-id header, but got: %v", requestId)
 	}
 }
 
@@ -111,8 +144,8 @@ paths:
 	context := NewContextBuilder().
 		WithDefinition("myservice", definition).
 		WithConfig(config).
-		WithResponse(200, "").
-		WithIdentityResponse(200, `{"access_token": "my-jwt-access-token", "expires_in": 3600, "token_type": "Bearer", "scope": "OR.Ping"}`).
+		WithResponse(http.StatusOK, "").
+		WithIdentityResponse(http.StatusOK, `{"access_token": "my-jwt-access-token", "expires_in": 3600, "token_type": "Bearer", "scope": "OR.Ping"}`).
 		Build()
 
 	result := RunCli([]string{"myservice", "ping"}, context)
@@ -140,8 +173,8 @@ paths:
 	context := NewContextBuilder().
 		WithDefinition("myservice", definition).
 		WithConfig(config).
-		WithResponse(200, "").
-		WithIdentityResponse(200, `{"access_token": "my-jwt-access-token", "expires_in": 3600, "token_type": "Bearer", "scope": "OR.Ping"}`).
+		WithResponse(http.StatusOK, "").
+		WithIdentityResponse(http.StatusOK, `{"access_token": "my-jwt-access-token", "expires_in": 3600, "token_type": "Bearer", "scope": "OR.Ping"}`).
 		Build()
 
 	result := RunCli([]string{"myservice", "ping", "--identity-uri", ":invalid"}, context)
@@ -169,16 +202,16 @@ paths:
 	context := NewContextBuilder().
 		WithDefinition("myservice", definition).
 		WithConfig(config).
-		WithResponse(200, "").
-		WithIdentityResponse(200, `{"access_token": "my-jwt-access-token", "expires_in": 3600, "token_type": "Bearer", "scope": "OR.Ping"}`).
+		WithResponse(http.StatusOK, "").
+		WithIdentityResponse(http.StatusOK, `{"access_token": "my-jwt-access-token", "expires_in": 3600, "token_type": "Bearer", "scope": "OR.Ping"}`).
 		Build()
 	RunCli([]string{"myservice", "ping"}, context)
 
 	context2 := NewContextBuilder().
 		WithDefinition("myservice", definition).
 		WithConfig(config).
-		WithResponse(200, "").
-		WithIdentityResponse(500, "Internal Server Error").
+		WithResponse(http.StatusOK, "").
+		WithIdentityResponse(http.StatusInternalServerError, "Internal Server Error").
 		Build()
 	result := RunCli([]string{"myservice", "ping"}, context2)
 
@@ -210,20 +243,20 @@ paths:
 	context := NewContextBuilder().
 		WithDefinition("myservice", definition).
 		WithConfig(config).
-		WithResponse(200, "").
-		WithIdentityResponse(200, `{"access_token": "my-jwt-access-token", "expires_in": 10, "token_type": "Bearer", "scope": "OR.Ping"}`).
+		WithResponse(http.StatusOK, "").
+		WithIdentityResponse(http.StatusOK, `{"access_token": "my-jwt-access-token", "expires_in": 10, "token_type": "Bearer", "scope": "OR.Ping"}`).
 		Build()
 	RunCli([]string{"myservice", "ping"}, context)
 
 	context2 := NewContextBuilder().
 		WithDefinition("myservice", definition).
 		WithConfig(config).
-		WithResponse(200, "").
-		WithIdentityResponse(500, "Internal Server Error").
+		WithResponse(http.StatusOK, "").
+		WithIdentityResponse(http.StatusInternalServerError, "Internal Server Error").
 		Build()
 	result := RunCli([]string{"myservice", "ping"}, context2)
 
-	if result.Error.Error() != "Error retrieving bearer token: Token service returned status code '500' and body 'Internal Server Error'" {
+	if result.Error.Error() != "Error retrieving bearer token: Service returned status code '500' and body 'Internal Server Error'" {
 		t.Errorf("Expected identity call, but got: %v", result.Error)
 	}
 }
@@ -245,7 +278,7 @@ paths:
 	context := NewContextBuilder().
 		WithDefinition("myservice", definition).
 		WithConfig(config).
-		WithResponse(200, "").
+		WithResponse(http.StatusOK, "").
 		Build()
 
 	result := RunCli([]string{"myservice", "ping"}, context)
@@ -254,5 +287,55 @@ paths:
 	header := result.RequestHeader["authorization"]
 	if header != expected {
 		t.Errorf("Expected PAT in Authorization header, got: %v", header)
+	}
+}
+
+func TestCacheClearShowsConfirmation(t *testing.T) {
+	context := NewContextBuilder().
+		Build()
+	result := RunCli([]string{"config", "cache", "clear"}, context)
+
+	if result.StdOut != "Cache has been successfully cleared\n" {
+		t.Errorf("Expected cache cleared message, but got: %v", result.StdOut)
+	}
+}
+
+func TestCacheClearRemovesCachedAuthToken(t *testing.T) {
+	config := `
+profiles:
+  - name: default
+    auth:
+      clientId: cleared-client-id
+      clientSecret: cleared-client-secret
+`
+	definition := `
+paths:
+  /ping:
+    get:
+      operationId: ping
+`
+
+	context := NewContextBuilder().
+		WithDefinition("myservice", definition).
+		WithConfig(config).
+		WithResponse(http.StatusOK, "").
+		WithIdentityResponse(http.StatusOK, `{"access_token": "my-jwt-access-token", "expires_in": 3600, "token_type": "Bearer", "scope": "OR.Ping"}`).
+		Build()
+	RunCli([]string{"myservice", "ping"}, context)
+
+	context2 := NewContextBuilder().
+		Build()
+	RunCli([]string{"config", "cache", "clear"}, context2)
+
+	context3 := NewContextBuilder().
+		WithDefinition("myservice", definition).
+		WithConfig(config).
+		WithResponse(http.StatusOK, "").
+		WithIdentityResponse(http.StatusInternalServerError, "Internal Server Error").
+		Build()
+	result := RunCli([]string{"myservice", "ping"}, context3)
+
+	if result.Error == nil {
+		t.Error("Expected call to identity but did not receive")
 	}
 }

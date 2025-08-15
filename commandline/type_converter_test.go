@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/UiPath/uipathcli/parser"
-	"github.com/UiPath/uipathcli/utils"
+	"github.com/UiPath/uipathcli/utils/stream"
 )
 
 func TestConvertReturnsErrorForInvalidBoolean(t *testing.T) {
@@ -41,7 +41,7 @@ func TestConvertStringToFileStream(t *testing.T) {
 	if err != nil {
 		t.Errorf("Should not return error, but got: %v", err)
 	}
-	fileStream := result.(*utils.FileStream)
+	fileStream := result.(*stream.FileStream)
 	if fileStream.Name() != "test.txt" {
 		t.Errorf("Result should be file stream, but got: %v", result)
 	}
@@ -198,6 +198,24 @@ func TestConvertStringAvoidEscapeEqualSign(t *testing.T) {
 	}
 }
 
+func TestConvertPreserveEscapeCharacter(t *testing.T) {
+	converter := newTypeConverter()
+
+	parameter := newParameter("values", parser.ParameterTypeStringArray, []parser.Parameter{})
+	result, _ := converter.Convert("..\\path\\myfile.txt,..\\path\\myfile2.txt", parameter)
+
+	values := result.([]string)
+	if len(values) != 2 {
+		t.Errorf("values array should contain two entries, but got: %v", len(values))
+	}
+	if values[0] != "..\\path\\myfile.txt" {
+		t.Errorf("values array should contain first path, but got: %v", values[0])
+	}
+	if values[1] != "..\\path\\myfile2.txt" {
+		t.Errorf("values array should contain second path, but got: %v", values[1])
+	}
+}
+
 func getValue(result interface{}, key string) interface{} {
 	return result.(map[string]interface{})[key]
 }
@@ -207,5 +225,5 @@ func getArrayValue(result interface{}, key string, index int) interface{} {
 }
 
 func newParameter(name string, t string, parameters []parser.Parameter) parser.Parameter {
-	return *parser.NewParameter(name, t, "", "", name, false, nil, []interface{}{}, parameters)
+	return *parser.NewParameter(name, t, "", "", name, false, nil, []interface{}{}, false, parameters)
 }

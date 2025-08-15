@@ -1,6 +1,8 @@
 package test
 
 import (
+	"net/http"
+	"strconv"
 	"testing"
 )
 
@@ -15,7 +17,7 @@ paths:
 
 	context := NewContextBuilder().
 		WithDefinition("myservice", definition).
-		WithResponse(200, `{"version":1}`).
+		WithResponse(http.StatusOK, `{"version":1}`).
 		Build()
 
 	result := RunCli([]string{"myservice", "ping", "--wait", "version"}, context)
@@ -35,7 +37,7 @@ paths:
 
 	context := NewContextBuilder().
 		WithDefinition("myservice", definition).
-		WithResponse(200, `{"version":1}`).
+		WithResponse(http.StatusOK, `{"version":1}`).
 		Build()
 
 	result := RunCli([]string{"myservice", "ping", "--wait", "invalid 2& expression"}, context)
@@ -56,7 +58,7 @@ paths:
 
 	context := NewContextBuilder().
 		WithDefinition("myservice", definition).
-		WithResponse(200, `{"version":1}`).
+		WithResponse(http.StatusOK, `{"version":1}`).
 		Build()
 
 	result := RunCli([]string{"myservice", "ping", "--wait", "version == `1`"}, context)
@@ -82,20 +84,22 @@ paths:
       summary: Simple ping
 `
 
+	callCount := 0
 	context := NewContextBuilder().
 		WithDefinition("myservice", definition).
-		WithNextResponse(200, `{"version":1}`).
-		WithNextResponse(200, `{"version":1}`).
-		WithResponse(200, `{"version":2}`).
+		WithResponseHandler(func(request RequestData) ResponseData {
+			callCount++
+			return ResponseData{Status: http.StatusOK, Body: `{"version":` + strconv.Itoa(callCount) + `}`}
+		}).
 		Build()
 
-	result := RunCli([]string{"myservice", "ping", "--wait", "version == `2`"}, context)
+	result := RunCli([]string{"myservice", "ping", "--wait", "version == `3`"}, context)
 
 	if result.Error != nil {
 		t.Errorf("Unexpected error, got: %v", result.Error)
 	}
 	expectedOutput := `{
-  "version": 2
+  "version": 3
 }
 `
 	if result.StdOut != expectedOutput {
@@ -112,14 +116,16 @@ paths:
       summary: Simple ping
 `
 
+	callCount := 0
 	context := NewContextBuilder().
 		WithDefinition("myservice", definition).
-		WithNextResponse(200, `{"version":1}`).
-		WithNextResponse(200, `{"version":1}`).
-		WithResponse(200, `{"version":2}`).
+		WithResponseHandler(func(request RequestData) ResponseData {
+			callCount++
+			return ResponseData{Status: http.StatusOK, Body: `{"version":` + strconv.Itoa(callCount) + `}`}
+		}).
 		Build()
 
-	result := RunCli([]string{"myservice", "ping", "--wait", "version == `2`"}, context)
+	result := RunCli([]string{"myservice", "ping", "--wait", "version == `3`"}, context)
 
 	if result.Error != nil {
 		t.Errorf("Unexpected error, got: %v", result.Error)
@@ -143,7 +149,7 @@ paths:
 
 	context := NewContextBuilder().
 		WithDefinition("myservice", definition).
-		WithResponse(200, `{"version":1}`).
+		WithResponse(http.StatusOK, `{"version":1}`).
 		Build()
 
 	result := RunCli([]string{"myservice", "ping", "--wait", "version == `2`", "--wait-timeout", "3"}, context)

@@ -1,10 +1,53 @@
 package test
 
 import (
+	"net/http"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestInvalidCallTimeoutShowsError(t *testing.T) {
+	definition := `
+paths:
+  /ping:
+    get:
+      summary: Simple ping
+`
+
+	context := NewContextBuilder().
+		WithDefinition("myservice", definition).
+		WithResponse(http.StatusOK, "").
+		Build()
+
+	result := RunCli([]string{"myservice", "get-ping", "--call-timeout", "-1"}, context)
+
+	expected := "Invalid value for 'call-timeout'"
+	if !strings.Contains(result.StdErr, expected) {
+		t.Errorf("stderr does not invalid call-timeout error error, expected: %v, got: %v", expected, result.StdErr)
+	}
+}
+
+func TestInvalidMaxAttemptsShowsError(t *testing.T) {
+	definition := `
+paths:
+  /ping:
+    get:
+      summary: Simple ping
+`
+
+	context := NewContextBuilder().
+		WithDefinition("myservice", definition).
+		WithResponse(http.StatusOK, "").
+		Build()
+
+	result := RunCli([]string{"myservice", "get-ping", "--max-attempts", "0"}, context)
+
+	expected := "Invalid value for 'max-attempts'"
+	if !strings.Contains(result.StdErr, expected) {
+		t.Errorf("stderr does not invalid call-attempts error error, expected: %v, got: %v", expected, result.StdErr)
+	}
+}
 
 func TestMissingRequiredParameterShowsError(t *testing.T) {
 	definition := `

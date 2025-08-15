@@ -3,9 +3,8 @@ package executor
 import (
 	"net/url"
 
-	"github.com/UiPath/uipathcli/config"
 	"github.com/UiPath/uipathcli/plugin"
-	"github.com/UiPath/uipathcli/utils"
+	"github.com/UiPath/uipathcli/utils/stream"
 )
 
 // The ExecutionContext provides all the data needed by the executor to construct the HTTP
@@ -17,13 +16,13 @@ type ExecutionContext struct {
 	BaseUri      url.URL
 	Route        string
 	ContentType  string
-	Input        utils.Stream
+	Input        stream.Stream
 	Parameters   ExecutionParameters
-	AuthConfig   config.AuthConfig
-	Insecure     bool
-	Debug        bool
+	AuthConfig   map[string]interface{}
 	IdentityUri  url.URL
 	Plugin       plugin.CommandPlugin
+	Debug        bool
+	Settings     ExecutionSettings
 }
 
 func NewExecutionContext(
@@ -33,12 +32,26 @@ func NewExecutionContext(
 	uri url.URL,
 	route string,
 	contentType string,
-	input utils.Stream,
+	input stream.Stream,
 	parameters []ExecutionParameter,
-	authConfig config.AuthConfig,
-	insecure bool,
-	debug bool,
+	authConfig map[string]interface{},
 	identityUri url.URL,
-	plugin plugin.CommandPlugin) *ExecutionContext {
-	return &ExecutionContext{organization, tenant, method, uri, route, contentType, input, parameters, authConfig, insecure, debug, identityUri, plugin}
+	plugin plugin.CommandPlugin,
+	debug bool,
+	settings ExecutionSettings) *ExecutionContext {
+	return &ExecutionContext{
+		organization,
+		tenant,
+		method,
+		uri,
+		route,
+		contentType,
+		input,
+		parameters,
+		authConfig,
+		identityUri,
+		plugin,
+		debug,
+		settings,
+	}
 }

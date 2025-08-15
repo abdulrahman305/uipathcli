@@ -21,6 +21,8 @@ const FlagNameIdentityUri = "identity-uri"
 const FlagNameServiceVersion = "service-version"
 const FlagNameHelp = "help"
 const FlagNameVersion = "version"
+const FlagNameCallTimeout = "call-timeout"
+const FlagNameMaxAttempts = "max-attempts"
 
 const FlagValueFromStdIn = "-"
 const FlagValueOutputFormatJson = "json"
@@ -33,6 +35,8 @@ var FlagNamesPredefined = []string{
 	FlagNameOrganization,
 	FlagNameTenant,
 	FlagNameInsecure,
+	FlagNameCallTimeout,
+	FlagNameMaxAttempts,
 	FlagNameOutputFormat,
 	FlagNameQuery,
 	FlagNameWait,
@@ -87,7 +91,7 @@ func (b *FlagBuilder) AddServiceVersionFlag(hidden bool) *FlagBuilder {
 	return b
 }
 
-func (b FlagBuilder) Build() []*FlagDefinition {
+func (b *FlagBuilder) Build() []*FlagDefinition {
 	flags := []*FlagDefinition{}
 	for _, name := range b.order {
 		flags = append(flags, b.flags[name])
@@ -95,7 +99,7 @@ func (b FlagBuilder) Build() []*FlagDefinition {
 	return flags
 }
 
-func (b FlagBuilder) defaultFlags(hidden bool) []*FlagDefinition {
+func (b *FlagBuilder) defaultFlags(hidden bool) []*FlagDefinition {
 	return []*FlagDefinition{
 		NewFlag(FlagNameDebug, "Enable debug output", FlagTypeBoolean).
 			WithEnvVarName("UIPATH_DEBUG").
@@ -118,6 +122,14 @@ func (b FlagBuilder) defaultFlags(hidden bool) []*FlagDefinition {
 			WithEnvVarName("UIPATH_INSECURE").
 			WithDefaultValue(false).
 			WithHidden(hidden),
+		NewFlag(FlagNameCallTimeout, "Call Timeout", FlagTypeInteger).
+			WithEnvVarName("UIPATH_CALL_TIMEOUT").
+			WithDefaultValue(60).
+			WithHidden(true),
+		NewFlag(FlagNameMaxAttempts, "Max Attempts", FlagTypeInteger).
+			WithEnvVarName("UIPATH_MAX_ATTEMPTS").
+			WithDefaultValue(3).
+			WithHidden(true),
 		NewFlag(FlagNameOutputFormat, fmt.Sprintf("Set output format: %s (default), %s", FlagValueOutputFormatJson, FlagValueOutputFormatText), FlagTypeString).
 			WithEnvVarName("UIPATH_OUTPUT").
 			WithDefaultValue("").
@@ -141,19 +153,19 @@ func (b FlagBuilder) defaultFlags(hidden bool) []*FlagDefinition {
 	}
 }
 
-func (b FlagBuilder) versionFlag() *FlagDefinition {
+func (b *FlagBuilder) versionFlag() *FlagDefinition {
 	return NewFlag(FlagNameVersion, "Display the build version", FlagTypeBoolean).
 		WithHidden(true)
 }
 
-func (b FlagBuilder) serviceVersionFlag(hidden bool) *FlagDefinition {
+func (b *FlagBuilder) serviceVersionFlag(hidden bool) *FlagDefinition {
 	return NewFlag(FlagNameServiceVersion, "Specific service version", FlagTypeString).
 		WithEnvVarName("UIPATH_SERVICE_VERSION").
 		WithDefaultValue("").
 		WithHidden(hidden)
 }
 
-func (b FlagBuilder) helpFlag() *FlagDefinition {
+func (b *FlagBuilder) helpFlag() *FlagDefinition {
 	return NewFlag(FlagNameHelp, "Show help", FlagTypeBoolean).
 		WithDefaultValue(false).
 		WithHidden(true)
